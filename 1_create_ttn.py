@@ -60,8 +60,18 @@ def split_name(full_name: str) -> tuple[str, str, str]:
     return last, first, middle
 
 
+_SKIP_KEYWORDS = ["тільки електронні", "только электронн", "електронна версія", "electronic only"]
+
+def is_electronic_only(row: dict) -> bool:
+    """Повертає True якщо замовлено тільки електронні версії — ТТН не потрібен."""
+    product = row.get(COL_PRODUCT, "").lower()
+    return any(kw in product for kw in _SKIP_KEYWORDS)
+
+
 def is_complete(row: dict) -> bool:
-    """Перевірити, що всі необхідні НП-поля заповнені."""
+    """Перевірити, що всі необхідні НП-поля заповнені і потрібна фізична відправка."""
+    if is_electronic_only(row):
+        return False
     return all(row.get(f, "").strip() for f in [COL_PHONE, COL_CITY, COL_WAREHOUSE, COL_NAME])
 
 

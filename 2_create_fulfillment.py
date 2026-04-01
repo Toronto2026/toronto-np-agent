@@ -101,6 +101,7 @@ def main():
 
     fulfillment_rows = []
     unknown_count = 0
+    order_counter: dict[str, int] = {}   # base → кількість використань
 
     for ttn, group in ttn_groups.items():
         first = group[0]
@@ -108,8 +109,12 @@ def main():
         wh    = str(first.get("Відділення", "")).strip()
         name  = first.get("ПІБ отримувача", "")
 
-        # Номер замовлення: 3 літери міста + номер відділення
-        order_num = city_code(city) + wh
+        # Номер замовлення: 3 літери міста + номер відділення.
+        # Якщо два різних ТТН мають однаковий базовий код → додаємо суфікс -2, -3, …
+        base = city_code(city) + wh
+        order_counter[base] = order_counter.get(base, 0) + 1
+        cnt = order_counter[base]
+        order_num = base if cnt == 1 else f"{base}-{cnt}"
 
         # Збираємо артикули по всіх рядках ТТН (агрегуємо однакові)
         articles: dict[str, int] = {}
@@ -117,7 +122,7 @@ def main():
             deal_id = str(row.get("ID угоди", "")).strip()
             product = str(row.get("Товар", "")).strip()
             try:
-                qty = int(row.get("Кількість", 1) or 1)
+                qty = int(float(str(row.get("Кількість", 1) or 1)))
             except (ValueError, TypeError):
                 qty = 1
 

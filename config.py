@@ -35,6 +35,10 @@ class Config:
     WIDTH: int = int(os.getenv("WIDTH", "5"))
     HEIGHT: int = int(os.getenv("HEIGHT", "30"))
 
+    # Битрікс24
+    BITRIX_WEBHOOK: str = os.getenv("BITRIX_WEBHOOK", "")
+    BITRIX_TTN_FIELD: str = os.getenv("BITRIX_TTN_FIELD", "UF_CRM_1704712295456")
+
     # Артикули
     ARTICLE_MEDAL: str = os.getenv("ARTICLE_MEDAL", "MED-001")
     ARTICLE_STATUETTE: str = os.getenv("ARTICLE_STATUETTE", "STAT-001")

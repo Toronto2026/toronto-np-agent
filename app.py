@@ -34,6 +34,7 @@ def load_credentials() -> dict[str, str]:
         "ARTICLE_DYPLOM", "ARTICLE_PODYAKA",
         "DESCRIPTION", "DECLARED_VALUE",
         "WEIGHT", "LENGTH", "WIDTH", "HEIGHT",
+        "BITRIX_WEBHOOK", "BITRIX_TTN_FIELD",
     ]
     creds: dict[str, str] = {}
     for k in keys:
@@ -132,7 +133,7 @@ else:
 st.divider()
 
 # ─── Вкладки ──────────────────────────────────────────────────────────────────
-tab1, tab2 = st.tabs(["📦  Крок 1 — Створення ТТН", "🏭  Крок 2 — Фулфілмент"])
+tab1, tab2, tab3 = st.tabs(["📦  Крок 1 — Створення ТТН", "🏭  Крок 2 — Фулфілмент", "🔄  Крок 3 — Оновити Битрікс24"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # КРОК 1
@@ -240,3 +241,37 @@ with tab2:
     else:
         st.warning("⚠ Спочатку запустіть **Крок 1** — файл ttn_per_deal не знайдено.")
         st.info("Після запуску Кроку 1 поверніться сюди і натисніть кнопку.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# КРОК 3
+# ══════════════════════════════════════════════════════════════════════════════
+with tab3:
+    st.subheader("Оновлення ТТН в угодах Битрікс24")
+    st.caption("Автоматично бере останній **ttn_results_*.xlsx** і записує номери ТТН у поле угоди.")
+
+    result_files = sorted(OUTPUT_DIR.glob("ttn_results_*.xlsx"), reverse=True)
+    webhook_ok = bool(creds.get("BITRIX_WEBHOOK"))
+
+    if not webhook_ok:
+        st.error("⚠ BITRIX_WEBHOOK не налаштовано у Secrets")
+    elif result_files:
+        st.info(f"📄 Файл: **{result_files[0].name}**")
+
+        col_dry3, col_btn3 = st.columns([3, 1])
+        dry3 = col_dry3.checkbox("Тестовий режим (dry-run) — не оновлювати Б24", value=True, key="dry3")
+        run3 = col_btn3.button("▶ Запустити", type="primary", key="run3", use_container_width=True)
+
+        if run3:
+            args3 = ["--ttn", str(result_files[0])]
+            if dry3:
+                args3.append("--dry-run")
+            with st.spinner("Оновлення угод..."):
+                output3, rc3 = run_script("3_update_bitrix.py", args3, creds)
+            console_block(output3)
+            if rc3 == 0:
+                if not dry3:
+                    st.success("✅ Угоди оновлено в Битрікс24!")
+                else:
+                    st.info("Dry-run завершено. Зніміть галочку для реального оновлення.")
+    else:
+        st.warning("⚠ Спочатку запустіть **Крок 1** — файл ttn_results не знайдено.")

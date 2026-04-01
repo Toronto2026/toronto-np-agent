@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import Config, ARTICLE_KEYWORDS
+from config import Config
 from utils.excel import read_ttn_per_deal, write_fulfillment_orders
 
 OUTPUT_DIR = Path(__file__).parent / "output"
@@ -56,21 +56,59 @@ def should_skip(product_name: str) -> bool:
     return any(kw in lower for kw in _SKIP_KEYWORDS)
 
 
-def resolve_article(product_name: str, deal_id: str, cfg: Config) -> str:
-    """Визначити артикул за назвою товару (пошук підрядка без урахування регістру)."""
-    lower = product_name.lower()
-    for keyword, article_fn in ARTICLE_KEYWORDS:
-        if keyword in lower:
-            article = article_fn(cfg)
-            if not article:
-                # Fallback якщо артикул не заданий у .env:
-                # диплом → ID угоди, подяка → P-{ID угоди} (формат НП фулфілменту)
-                if "диплом" in lower:
-                    return deal_id
-                if "подяк" in lower:
-                    return f"P-{deal_id}"
-            return article
-    return ""
+def _norm(s: str) -> str:
+    """Нормалізація для порівняння: є→е, ї→и, нижній регістр."""
+    return s.lower().replace("є", "е").replace("ї", "и")
+
+
+def resolve_articles(product_name: str, deal_id: str, deal_qty: int, cfg: Config) -> list[tuple[str, int]]:
+    """Повертає список (артикул, кількість) для одного рядка угоди.
+
+    Правила:
+      - "повний комплект" → диплом + подяка (завжди 1) + медаль + статуєтка
+      - "диплом"          → {deal_id},  qty = deal_qty
+      - "подяк"           → P-{deal_id}, qty = 1 (один керівник незалежно від кількості)
+      - "медаль"          → ARTICLE_MEDAL,     qty = deal_qty
+      - "статует/статує"  → ARTICLE_STATUETTE, qty = deal_qty
+      - "кубок"           → ARTICLE_CUP,       qty = deal_qty
+    """
+    n = _norm(product_name)
+
+    dyplom_art   = cfg.ARTICLE_DYPLOM    or deal_id
+    podyaka_art  = cfg.ARTICLE_PODYAKA   or f"P-{deal_id}"
+
+    # Повний комплект: 4 позиції в одному рядку Бітрікс
+    if "комплект" in n:
+        items: list[tuple[str, int]] = [
+            (dyplom_art,  deal_qty),
+            (podyaka_art, 1),          # завжди 1 подяка на керівника
+        ]
+        if cfg.ARTICLE_MEDAL:
+            items.append((cfg.ARTICLE_MEDAL, deal_qty))
+        if cfg.ARTICLE_STATUETTE:
+            items.append((cfg.ARTICLE_STATUETTE, deal_qty))
+        return items
+
+    if "диплом" in n:
+        return [(dyplom_art, deal_qty)]
+
+    if "подяк" in n:
+        return [(podyaka_art, 1)]
+
+    # "статует" (з е) або "статує" (з є, після нормалізації → "статуе")
+    if "статует" in n or "статуе" in n:
+        art = cfg.ARTICLE_STATUETTE
+        return [(art, deal_qty)] if art else []
+
+    if "медаль" in n:
+        art = cfg.ARTICLE_MEDAL
+        return [(art, deal_qty)] if art else []
+
+    if "кубок" in n:
+        art = cfg.ARTICLE_CUP
+        return [(art, deal_qty)] if art else []
+
+    return []
 
 
 def main():
@@ -131,13 +169,14 @@ def main():
             if should_skip(product):
                 continue
 
-            article = resolve_article(product, deal_id, cfg)
-            if not article:
+            pairs = resolve_articles(product, deal_id, qty, cfg)
+            if not pairs:
                 print(f"  ⚠️  Невизначений артикул: ТТН={ttn}, Товар={product!r}")
                 unknown_count += 1
-                article = f"???({product[:15]})"
-
-            articles[article] = articles.get(article, 0) + qty
+                articles[f"???({product[:15]})"] = articles.get(f"???({product[:15]})", 0) + qty
+            else:
+                for art, art_qty in pairs:
+                    articles[art] = articles.get(art, 0) + art_qty
 
         # Один рядок на артикул
         for article, qty in articles.items():

@@ -63,11 +63,12 @@ def resolve_article(product_name: str, deal_id: str, cfg: Config) -> str:
         if keyword in lower:
             article = article_fn(cfg)
             if not article:
-                # Fallback якщо артикул не заданий у .env
+                # Fallback якщо артикул не заданий у .env:
+                # диплом → ID угоди, подяка → P-{ID угоди} (формат НП фулфілменту)
                 if "диплом" in lower:
                     return deal_id
                 if "подяк" in lower:
-                    return f"P{deal_id}"
+                    return f"P-{deal_id}"
             return article
     return ""
 

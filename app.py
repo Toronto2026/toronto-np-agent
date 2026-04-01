@@ -247,31 +247,55 @@ with tab2:
 # ══════════════════════════════════════════════════════════════════════════════
 with tab3:
     st.subheader("Оновлення ТТН в угодах Битрікс24")
-    st.caption("Автоматично бере останній **ttn_results_*.xlsx** і записує номери ТТН у поле угоди.")
+    st.caption("Завантажте **ttn_results_*.xlsx** з Кроку 1 — агент запише номери ТТН у всі угоди.")
 
-    result_files = sorted(OUTPUT_DIR.glob("ttn_results_*.xlsx"), reverse=True)
     webhook_ok = bool(creds.get("BITRIX_WEBHOOK"))
 
     if not webhook_ok:
         st.error("⚠ BITRIX_WEBHOOK не налаштовано у Secrets")
-    elif result_files:
-        st.info(f"📄 Файл: **{result_files[0].name}**")
-
-        col_dry3, col_btn3 = st.columns([3, 1])
-        dry3 = col_dry3.checkbox("Тестовий режим (dry-run) — не оновлювати Б24", value=True, key="dry3")
-        run3 = col_btn3.button("▶ Запустити", type="primary", key="run3", use_container_width=True)
-
-        if run3:
-            args3 = ["--ttn", str(result_files[0])]
-            if dry3:
-                args3.append("--dry-run")
-            with st.spinner("Оновлення угод..."):
-                output3, rc3 = run_script("3_update_bitrix.py", args3, creds)
-            console_block(output3)
-            if rc3 == 0:
-                if not dry3:
-                    st.success("✅ Угоди оновлено в Битрікс24!")
-                else:
-                    st.info("Dry-run завершено. Зніміть галочку для реального оновлення.")
     else:
-        st.warning("⚠ Спочатку запустіть **Крок 1** — файл ttn_results не знайдено.")
+        # Спочатку шукаємо файл з поточної сесії (Крок 1 → Крок 3 без виходу)
+        result_files = sorted(OUTPUT_DIR.glob("ttn_results_*.xlsx"), reverse=True)
+
+        uploaded3 = st.file_uploader(
+            "Завантажте ttn_results_*.xlsx (якщо щойно запустили Крок 1 — файл підтягнеться автоматично)",
+            type=["xlsx"],
+            key="results_file",
+        )
+
+        # Визначаємо джерело файлу
+        ttn_results_path = None
+        if uploaded3:
+            fd3, ttn_results_path = tempfile.mkstemp(suffix=".xlsx")
+            os.close(fd3)
+            with open(ttn_results_path, "wb") as f:
+                f.write(uploaded3.getvalue())
+            st.info(f"📄 Завантажено: **{uploaded3.name}**")
+        elif result_files:
+            ttn_results_path = str(result_files[0])
+            st.info(f"📄 З поточної сесії: **{result_files[0].name}**")
+
+        if ttn_results_path:
+            # Автоматичний dry-run — показуємо список одразу
+            if "dry_preview_3" not in st.session_state:
+                with st.spinner("Перевірка списку угод..."):
+                    preview_out, _ = run_script("3_update_bitrix.py",
+                                                ["--ttn", ttn_results_path, "--dry-run"], creds)
+                st.session_state["dry_preview_3"] = preview_out
+
+            console_block(st.session_state["dry_preview_3"])
+
+            st.divider()
+            confirmed = st.checkbox("✅ Список правильний — оновити угоди в Битрікс24", key="confirm3")
+            run3 = st.button("▶ Оновити Битрікс24", type="primary",
+                             disabled=not confirmed, key="run3", use_container_width=False)
+
+            if run3:
+                with st.spinner("Оновлення угод..."):
+                    output3, rc3 = run_script("3_update_bitrix.py", ["--ttn", ttn_results_path], creds)
+                console_block(output3)
+                if rc3 == 0:
+                    st.success("✅ Угоди оновлено в Битрікс24!")
+                    st.session_state.pop("dry_preview_3", None)
+        else:
+            st.warning("⚠ Завантажте файл ttn_results або спочатку запустіть Крок 1.")

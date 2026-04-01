@@ -34,11 +34,25 @@ def _normalize_header(h: str) -> str:
 
 
 def read_bitrix_export(path: str | Path) -> list[dict]:
-    """Читає Excel-експорт з Бітрікс24. Повертає список нормалізованих рядків."""
-    wb = openpyxl.load_workbook(path, data_only=True)
-    ws = wb.active
+    """Читає Excel-експорт з Бітрікс24 (.xlsx або .xls / HTML-таблиця).
+    Повертає список нормалізованих рядків."""
+    path = Path(path)
 
-    rows = list(ws.iter_rows(values_only=True))
+    # Спочатку пробуємо openpyxl (xlsx)
+    try:
+        wb = openpyxl.load_workbook(path, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+    except Exception:
+        # Fallback: pandas (підтримує .xls через xlrd і HTML-таблиці через lxml)
+        import pandas as pd
+        try:
+            df = pd.read_excel(path, dtype=str, header=0)
+        except Exception:
+            df = pd.read_html(str(path), header=0)[0].astype(str)
+        df = df.fillna("")
+        rows = [tuple(df.columns)] + list(df.itertuples(index=False, name=None))
+
     if not rows:
         return []
 
@@ -51,13 +65,14 @@ def read_bitrix_export(path: str | Path) -> list[dict]:
 
     result = []
     for row in rows[1:]:
-        if all(v is None for v in row):
+        if all(v is None or str(v).strip() in ("", "None", "nan") for v in row):
             continue
         rec: dict = {}
         for i, field in col_map.items():
-            val = row[i]
+            val = row[i] if i < len(row) else None
             rec[field] = str(val).strip() if val is not None else ""
-        # Тільки якщо є хоча б ID
+            if rec[field] in ("None", "nan"):
+                rec[field] = ""
         if rec.get(COL_ID):
             result.append(rec)
 

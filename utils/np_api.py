@@ -86,22 +86,9 @@ class NovaPoshtaAPI:
         contact_ref = item["ContactPerson"]["data"][0]["Ref"]
         return {"counterparty_ref": counterparty_ref, "contact_ref": contact_ref}
 
-    def find_ttn_by_internal_number(self, internal_number: str) -> str | None:
-        """Шукає існуючу ТТН за InternalNumber (ID угод).
-        Повертає IntDocNumber якщо знайдено, інакше None.
-        """
-        try:
-            data = self._call(
-                "InternetDocument",
-                "getDocumentList",
-                {"InternalNumber": internal_number, "GetFullList": "1"},
-            )
-            items = data.get("data", [])
-            if items:
-                return items[0].get("IntDocNumber")
-        except NovaPoshtaError:
-            pass
-        return None
+    # find_ttn_by_internal_number видалено: NP API getDocumentList не фільтрує
+    # по InternalNumber точно і повертає довільну накладну.
+    # Дублікати тепер відстежуються через локальний JSON-кеш (output/ttn_cache.json).
 
     def create_ttn(self, params: dict) -> str:
         """Створити ТТН. Повертає номер накладної (IntDocNumber)."""

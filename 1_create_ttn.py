@@ -6,6 +6,7 @@
   python 1_create_ttn.py --file export_bitrix.xlsx --dry-run
 """
 import argparse
+import json
 import sys
 from collections import defaultdict
 from datetime import date
@@ -68,6 +69,24 @@ def is_electronic_only(row: dict) -> bool:
     return any(kw in product for kw in _SKIP_KEYWORDS)
 
 
+CACHE_FILE = OUTPUT_DIR / "ttn_cache.json"
+
+
+def load_cache() -> dict[str, str]:
+    """Завантажує кеш phone→ТТН з попередніх запусків."""
+    if CACHE_FILE.exists():
+        try:
+            return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def save_cache(cache: dict[str, str]) -> None:
+    """Зберігає кеш на диск."""
+    CACHE_FILE.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def is_complete(row: dict) -> bool:
     """Перевірити, що всі необхідні НП-поля заповнені і потрібна фізична відправка."""
     if is_electronic_only(row):
@@ -109,7 +128,8 @@ def build_ttn_params(cfg: Config, group: list[dict], city_ref: str, warehouse_re
     }
 
 
-def process_group(api: NovaPoshtaAPI, cfg: Config, phone: str, group: list[dict], dry_run: bool) -> dict:
+def process_group(api: NovaPoshtaAPI, cfg: Config, phone: str, group: list[dict],
+                  dry_run: bool, cache: dict[str, str]) -> dict:
     """Обробити одну групу телефону. Повертає рядок результату."""
     first = group[0]
     city_name = first[COL_CITY]
@@ -135,9 +155,9 @@ def process_group(api: NovaPoshtaAPI, cfg: Config, phone: str, group: list[dict]
         return {**result_base, "ttn": "DRY-RUN", "status": "dry-run"}
 
     try:
-        # Перевірка: чи вже існує ТТН для цих угод (захист від дублікатів при повторному запуску)
-        existing = api.find_ttn_by_internal_number(ids)
-        if existing:
+        # Перевірка дублікатів через локальний кеш (надійніше ніж NP API)
+        if phone in cache:
+            existing = cache[phone]
             print(f"  ⏭️  Вже існує ТТН {existing} | {full_name} | {city_name} | {ids}")
             return {**result_base, "ttn": existing, "status": "OK"}
 
@@ -147,6 +167,8 @@ def process_group(api: NovaPoshtaAPI, cfg: Config, phone: str, group: list[dict]
         recipient = api.create_counterparty(first_name, last, middle, normalize_phone(phone))
         params = build_ttn_params(cfg, group, city_ref, warehouse_ref, recipient)
         ttn = api.create_ttn(params)
+        cache[phone] = ttn          # зберігаємо в кеш одразу
+        save_cache(cache)
         print(f"  ✅ ТТН {ttn} | {full_name} | {city_name} | {ids}")
         return {**result_base, "ttn": ttn, "status": "OK"}
     except NovaPoshtaError as e:
@@ -168,6 +190,11 @@ def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
     cfg = Config()
     api = NovaPoshtaAPI(cfg.NP_API_KEY)
+
+    # Локальний кеш phone→ТТН (надійний захист від дублікатів)
+    cache = {} if args.dry_run else load_cache()
+    if cache and not args.dry_run:
+        print(f"📋 Кеш: {len(cache)} вже створених ТТН")
 
     # Авто-визначення міста відправника з адреси в НП (потрібно для CitySender у ТТН)
     if not args.dry_run and not cfg.NP_SENDER_CITY_REF:
@@ -202,7 +229,7 @@ def main():
     results = []
     errors = 0
     for phone, group in groups.items():
-        row = process_group(api, cfg, phone, group, dry_run=args.dry_run)
+        row = process_group(api, cfg, phone, group, dry_run=args.dry_run, cache=cache)
         results.append(row)
         if row["status"] not in ("OK", "dry-run"):
             errors += 1

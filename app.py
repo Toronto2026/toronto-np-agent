@@ -199,29 +199,57 @@ with tab1:
 # ══════════════════════════════════════════════════════════════════════════════
 with tab2:
     st.subheader("Генерація таблиці замовлень фулфілменту НП")
-    st.caption(
-        "Автоматично бере останній файл **ttn_per_deal_*.xlsx** з Кроку 1. "
-        "Генерує таблицю: ТТН | Номер замовлення | Артикул | К-сть"
+    st.caption("Вхід: **ttn_per_deal_*.xlsx** з Кроку 1. Вихід: **fulfillment_orders_*.xlsx** (2 аркуші: замовлення + звіт)")
+
+    # Файл — або з output/ (поточна сесія), або завантажений вручну
+    uploaded2 = st.file_uploader(
+        "Завантажте ttn_per_deal_*.xlsx (якщо щойно запустили Крок 1 — файл підтягнеться автоматично)",
+        type=["xlsx"],
+        key="ttn_per_deal_file",
     )
 
-    ttn_files = sorted(OUTPUT_DIR.glob("ttn_per_deal_*.xlsx"), reverse=True)
+    if uploaded2:
+        new2 = uploaded2.getvalue()
+        if st.session_state.get("_b2_bytes") != new2:
+            st.session_state["_b2_bytes"] = new2
+            st.session_state["_b2_name"]  = uploaded2.name
+    else:
+        ttn_files = sorted(OUTPUT_DIR.glob("ttn_per_deal_*.xlsx"), reverse=True)
+        if ttn_files and "_b2_bytes" not in st.session_state:
+            with open(ttn_files[0], "rb") as f:
+                st.session_state["_b2_bytes"] = f.read()
+            st.session_state["_b2_name"] = ttn_files[0].name
 
-    if ttn_files:
-        st.info(f"📄 Файл: **{ttn_files[0].name}**")
+    b2_bytes = st.session_state.get("_b2_bytes")
+    b2_name  = st.session_state.get("_b2_name", "ttn_per_deal.xlsx")
+
+    if b2_bytes:
+        st.info(f"📄 Файл: **{b2_name}**")
 
         run2 = st.button(
             "▶ Сформувати замовлення фулфілменту",
             type="primary",
-            disabled=not all_ok,
+            use_container_width=False,
         )
 
         if run2:
-            with st.spinner("Формую таблицю..."):
-                output, rc = run_script(
-                    "2_create_fulfillment.py",
-                    ["--ttn", str(ttn_files[0])],
-                    creds,
-                )
+            # Зберігаємо у тимчасовий файл
+            fd2, tmp2 = tempfile.mkstemp(suffix=".xlsx")
+            try:
+                os.close(fd2)
+                with open(tmp2, "wb") as f:
+                    f.write(b2_bytes)
+                with st.spinner("Формую таблицю..."):
+                    output, rc = run_script(
+                        "2_create_fulfillment.py",
+                        ["--ttn", tmp2],
+                        creds,
+                    )
+            finally:
+                try:
+                    os.unlink(tmp2)
+                except OSError:
+                    pass
 
             console_block(output)
 
@@ -230,17 +258,20 @@ with tab2:
                 st.success("✅ Таблиця готова!")
                 download_latest("fulfillment_orders_*.xlsx", "fulfillment_orders.xlsx")
 
-                # Попередній перегляд таблиці
+                # Попередній перегляд: головний аркуш + звіт
                 try:
-                    import openpyxl
                     import pandas as pd
-                    df = pd.read_excel(ful_files[0])
-                    st.dataframe(df, use_container_width=True, height=400)
+                    st.markdown("**📋 Замовлення фулфілменту**")
+                    df_main = pd.read_excel(ful_files[0], sheet_name="Фулфілмент замовлення")
+                    st.dataframe(df_main, use_container_width=True, height=350)
+
+                    st.markdown("**📊 Звіт**")
+                    df_report = pd.read_excel(ful_files[0], sheet_name="Звіт", header=None)
+                    st.dataframe(df_report, use_container_width=True, height=300)
                 except Exception:
                     pass
     else:
-        st.warning("⚠ Спочатку запустіть **Крок 1** — файл ttn_per_deal не знайдено.")
-        st.info("Після запуску Кроку 1 поверніться сюди і натисніть кнопку.")
+        st.warning("⚠ Завантажте файл ttn_per_deal або спочатку запустіть Крок 1.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # КРОК 3

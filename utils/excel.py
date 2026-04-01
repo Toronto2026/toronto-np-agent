@@ -205,19 +205,32 @@ def read_ttn_per_deal(path: str | Path) -> list[dict]:
     return result
 
 
-def write_fulfillment_orders(rows: list[dict], output_dir: Path) -> Path:
+def write_fulfillment_orders(
+    rows: list[dict],
+    output_dir: Path,
+    report: dict | None = None,
+) -> Path:
     """Записує таблицю замовлень фулфілменту НП.
 
-    Формат (відповідає веб-формі НП):
+    Аркуш 1 «Фулфілмент замовлення»:
       ТТН | Номер замовлення | Артикул | Кількість | ПІБ отримувача | Місто
 
-    Рядки одного ТТН підсвічені одним кольором (блакитний / білий по черзі).
+    Аркуш 2 «Звіт» (якщо передано report):
+      - Підсумок по артикулах
+      - Пропущені товари (внески тощо)
+      - Невизначені артикули (потребують перевірки)
+
+    report = {
+        "summary":  {article: total_qty},
+        "skipped":  [{"ttn", "name", "product"}],
+        "unknown":  [{"ttn", "name", "product"}],
+    }
     """
     today = date.today().strftime("%Y%m%d")
     path = output_dir / f"fulfillment_orders_{today}.xlsx"
 
-    headers   = ["ТТН", "Номер замовлення", "Артикул", "Кількість", "ПІБ отримувача", "Місто"]
-    field_keys = ["ttn", "order_number",    "article", "qty",       "name",            "city"]
+    headers    = ["ТТН", "Номер замовлення", "Артикул", "Кількість", "ПІБ отримувача", "Місто"]
+    field_keys = ["ttn", "order_number",     "article", "qty",       "name",            "city"]
 
     wb = Workbook()
     ws = wb.active
@@ -243,6 +256,66 @@ def write_fulfillment_orders(rows: list[dict], output_dir: Path) -> Path:
     for col in ws.columns:
         max_len = max((len(str(cell.value or "")) for cell in col), default=0)
         ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 50)
+
+    # ── Аркуш «Звіт» ──────────────────────────────────────────────────────
+    if report:
+        wr = wb.create_sheet("Звіт")
+        red_fill    = PatternFill("solid", fgColor="FFD7D7")
+        yellow_fill = PatternFill("solid", fgColor="FFF2CC")
+        green_fill  = PatternFill("solid", fgColor="E2EFDA")
+
+        r = 1
+
+        # 1. Підсумок по артикулах
+        wr.cell(r, 1, "ПІДСУМОК ПО АРТИКУЛАХ").font = Font(bold=True, size=12)
+        r += 1
+        _write_header_row(wr, r, ["Артикул", "Загальна кількість"])
+        r += 1
+        for article, qty in sorted(report.get("summary", {}).items()):
+            wr.cell(r, 1, article).fill = green_fill
+            wr.cell(r, 2, qty).fill = green_fill
+            r += 1
+
+        r += 1  # пустий рядок
+
+        # 2. Пропущені товари (внески, послуги)
+        skipped = report.get("skipped", [])
+        wr.cell(r, 1, f"ПРОПУЩЕНІ ТОВАРИ (не фізичні) — {len(skipped)} шт.").font = Font(bold=True, size=12)
+        r += 1
+        if skipped:
+            _write_header_row(wr, r, ["ТТН", "ПІБ отримувача", "Товар"])
+            r += 1
+            for item in skipped:
+                wr.cell(r, 1, item.get("ttn", "")).fill = yellow_fill
+                wr.cell(r, 2, item.get("name", "")).fill = yellow_fill
+                wr.cell(r, 3, item.get("product", "")).fill = yellow_fill
+                r += 1
+        else:
+            wr.cell(r, 1, "— немає —")
+            r += 1
+
+        r += 1  # пустий рядок
+
+        # 3. Невизначені артикули (потребують перевірки)
+        unknown = report.get("unknown", [])
+        wr.cell(r, 1, f"НЕВИЗНАЧЕНІ АРТИКУЛИ (потребують перевірки) — {len(unknown)} шт.").font = Font(bold=True, size=12)
+        r += 1
+        if unknown:
+            _write_header_row(wr, r, ["ТТН", "ПІБ отримувача", "Товар"])
+            r += 1
+            for item in unknown:
+                wr.cell(r, 1, item.get("ttn", "")).fill = red_fill
+                wr.cell(r, 2, item.get("name", "")).fill = red_fill
+                wr.cell(r, 3, item.get("product", "")).fill = red_fill
+                r += 1
+        else:
+            wr.cell(r, 1, "✅ Всі товари розпізнані")
+            r += 1
+
+        # Авторозмір
+        for col in wr.columns:
+            max_len = max((len(str(cell.value or "")) for cell in col), default=0)
+            wr.column_dimensions[col[0].column_letter].width = min(max_len + 4, 60)
 
     wb.save(path)
     return path

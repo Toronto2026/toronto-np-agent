@@ -145,8 +145,10 @@ def main():
     print(f"📦 Унікальних ТТН: {len(ttn_groups)}")
 
     fulfillment_rows = []
-    unknown_count = 0
     order_counter: dict[str, int] = {}   # base → кількість використань
+    report_skipped: list[dict] = []      # пропущені (внески тощо)
+    report_unknown: list[dict] = []      # невизначені артикули
+    report_summary: dict[str, int] = {}  # артикул → загальна кількість
 
     for ttn, group in ttn_groups.items():
         first = group[0]
@@ -173,13 +175,14 @@ def main():
 
             # Ігнорувати оплати / організаційні внески
             if should_skip(product):
+                report_skipped.append({"ttn": ttn, "name": name, "product": product})
                 continue
 
             pairs = resolve_articles(product, deal_id, qty, cfg)
             if not pairs:
                 print(f"  ⚠️  Невизначений артикул: ТТН={ttn}, Товар={product!r}")
-                unknown_count += 1
-                articles[f"???({product[:15]})"] = articles.get(f"???({product[:15]})", 0) + qty
+                report_unknown.append({"ttn": ttn, "name": name, "product": product})
+                articles[f"???({product[:20]})"] = articles.get(f"???({product[:20]})", 0) + qty
             else:
                 for art, art_qty in pairs:
                     articles[art] = articles.get(art, 0) + art_qty
@@ -194,14 +197,27 @@ def main():
                 "name":         name,
                 "city":         city,
             })
+            report_summary[article] = report_summary.get(article, 0) + qty
             print(f"  📋 {ttn} | {order_num} | {article} × {qty} | {name}")
 
-    out_path = write_fulfillment_orders(fulfillment_rows, OUTPUT_DIR)
+    report = {
+        "summary": report_summary,
+        "skipped": report_skipped,
+        "unknown": report_unknown,
+    }
+    out_path = write_fulfillment_orders(fulfillment_rows, OUTPUT_DIR, report=report)
 
     print()
     print(f"✅ Рядків у таблиці: {len(fulfillment_rows)}")
-    if unknown_count:
-        print(f"⚠️  Невизначених артикулів: {unknown_count} → перевірте вручну")
+    print(f"📊 Підсумок артикулів:")
+    for art, qty in sorted(report_summary.items()):
+        print(f"   {art}: {qty}")
+    if report_skipped:
+        print(f"⏭️  Пропущено (внески): {len(report_skipped)}")
+    if report_unknown:
+        print(f"⚠️  Невизначених артикулів: {len(report_unknown)} → аркуш «Звіт»")
+    else:
+        print(f"✅ Всі товари розпізнані")
     print(f"📁 Результат: {out_path.name}")
 
 

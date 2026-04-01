@@ -77,11 +77,11 @@ def resolve_articles(product_name: str, deal_id: str, deal_qty: int, cfg: Config
     dyplom_art   = cfg.ARTICLE_DYPLOM    or deal_id
     podyaka_art  = cfg.ARTICLE_PODYAKA   or f"P-{deal_id}"
 
-    # Повний комплект: 4 позиції в одному рядку Бітрікс
+    # Повний комплект: 4 позиції, кількість = кількість комплектів
     if "комплект" in n:
         items: list[tuple[str, int]] = [
             (dyplom_art,  deal_qty),
-            (podyaka_art, 1),          # завжди 1 подяка на керівника
+            (podyaka_art, deal_qty),
         ]
         if cfg.ARTICLE_MEDAL:
             items.append((cfg.ARTICLE_MEDAL, deal_qty))

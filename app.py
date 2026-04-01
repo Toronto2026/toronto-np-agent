@@ -263,19 +263,36 @@ with tab3:
             key="results_file",
         )
 
-        # Визначаємо джерело файлу
-        ttn_results_path = None
+        # Визначаємо джерело файлу — зберігаємо байти в session_state щоб
+        # preview і реальний запуск завжди використовували ОДИН і той самий файл
         if uploaded3:
-            fd3, ttn_results_path = tempfile.mkstemp(suffix=".xlsx")
-            os.close(fd3)
-            with open(ttn_results_path, "wb") as f:
-                f.write(uploaded3.getvalue())
-            st.info(f"📄 Завантажено: **{uploaded3.name}**")
-        elif result_files:
-            ttn_results_path = str(result_files[0])
-            st.info(f"📄 З поточної сесії: **{result_files[0].name}**")
+            # Новий файл завантажено — скидаємо старий preview
+            new_bytes = uploaded3.getvalue()
+            if st.session_state.get("_b3_bytes") != new_bytes:
+                st.session_state["_b3_bytes"] = new_bytes
+                st.session_state["_b3_name"] = uploaded3.name
+                st.session_state.pop("dry_preview_3", None)
+        elif result_files and "_b3_bytes" not in st.session_state:
+            # Файл з поточної сесії (Крок 1 → Крок 3)
+            with open(result_files[0], "rb") as f:
+                st.session_state["_b3_bytes"] = f.read()
+            st.session_state["_b3_name"] = result_files[0].name
 
-        if ttn_results_path:
+        b3_bytes = st.session_state.get("_b3_bytes")
+        b3_name  = st.session_state.get("_b3_name", "ttn_results.xlsx")
+
+        if b3_bytes:
+            st.info(f"📄 Файл: **{b3_name}**")
+
+            # Записуємо у тимчасовий файл (один раз за сесію)
+            if "ttn_results_tmp" not in st.session_state:
+                fd3, tmp3 = tempfile.mkstemp(suffix=".xlsx")
+                os.close(fd3)
+                with open(tmp3, "wb") as f:
+                    f.write(b3_bytes)
+                st.session_state["ttn_results_tmp"] = tmp3
+            ttn_results_path = st.session_state["ttn_results_tmp"]
+
             # Автоматичний dry-run — показуємо список одразу
             if "dry_preview_3" not in st.session_state:
                 with st.spinner("Перевірка списку угод..."):
@@ -296,6 +313,8 @@ with tab3:
                 console_block(output3)
                 if rc3 == 0:
                     st.success("✅ Угоди оновлено в Битрікс24!")
-                    st.session_state.pop("dry_preview_3", None)
+                    # Скидаємо кеш для наступного запуску
+                    for k in ("dry_preview_3", "ttn_results_tmp", "_b3_bytes", "_b3_name"):
+                        st.session_state.pop(k, None)
         else:
             st.warning("⚠ Завантажте файл ttn_results або спочатку запустіть Крок 1.")

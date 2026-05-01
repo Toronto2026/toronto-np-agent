@@ -1,5 +1,7 @@
 """Обгортка над API Нової Пошти v2."""
+import time
 import requests
+from requests.exceptions import SSLError, ConnectionError as ReqConnectionError, Timeout
 
 
 NP_API_URL = "https://api.novaposhta.ua/v2.0/json/"
@@ -22,13 +24,23 @@ class NovaPoshtaAPI:
             "calledMethod": method,
             "methodProperties": props,
         }
-        resp = requests.post(NP_API_URL, json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        if not data.get("success"):
-            errors = ", ".join(data.get("errors", ["невідома помилка"]))
-            raise NovaPoshtaError(f"{model}.{method}: {errors}")
-        return data
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                resp = requests.post(NP_API_URL, json=payload, timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
+                if not data.get("success"):
+                    errors = ", ".join(data.get("errors", ["невідома помилка"]))
+                    raise NovaPoshtaError(f"{model}.{method}: {errors}")
+                return data
+            except NovaPoshtaError:
+                raise
+            except (SSLError, ReqConnectionError, Timeout) as e:
+                last_exc = e
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
+        raise NovaPoshtaError(f"Мережева помилка (3 спроби): {last_exc}")
 
     def get_city_ref(self, city_name: str) -> str:
         """Отримати Ref міста за назвою (з кешем)."""

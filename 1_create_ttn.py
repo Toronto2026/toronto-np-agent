@@ -42,13 +42,18 @@ def normalize_phone(phone: str) -> str:
 
 
 def normalize_city(city: str) -> str:
-    """Прибрати префікси 'с.', 'м.', 'смт.' та зайву адресу після коми."""
+    """Прибрати префікси типу 'м.', 'місто', 'селище' та зайву адресу."""
     import re
     city = city.strip()
-    # Тільки якщо є крапка — щоб не чіпати "Самар", "Мукачево"
-    city = re.sub(r"^(смт\.\s*|м\.\s*|с\.\s*|сел\.\s*)", "", city, flags=re.IGNORECASE)
-    # Видаляємо вулицю після " , " (напр. "Мукачево , вулиця Берегівська 66")
+    # Прибираємо типові префікси (з крапкою або без)
+    city = re.sub(
+        r"^(смт\.?\s*|м\.?\s*|с\.?\s*|сел\.?\s*|місто\s+|селище\s+|село\s+|с-ще\s*\.?\s*)",
+        "", city, flags=re.IGNORECASE,
+    )
+    # Видаляємо вулицю/адресу після коми
     city = re.sub(r"\s*,.*$", "", city)
+    # Видаляємо " район ...", " область ...", " вул. ..." якщо в полі ціла адреса
+    city = re.sub(r"\s+(район|область|вул\.?|вулиця).*$", "", city, flags=re.IGNORECASE)
     return city.strip()
 
 
@@ -174,6 +179,9 @@ def process_group(api: NovaPoshtaAPI, cfg: Config, phone: str, group: list[dict]
     except NovaPoshtaError as e:
         print(f"  ❌ Помилка [{ids}]: {e}")
         return {**result_base, "ttn": "", "status": str(e)}
+    except Exception as e:
+        print(f"  ❌ Неочікувана помилка [{ids}]: {e}")
+        return {**result_base, "ttn": "", "status": f"ERROR: {e}"}
 
 
 def main():

@@ -30,7 +30,9 @@ _HEADER_MAP = {
     "послуга": COL_PRODUCT,
     "товар/послуга": COL_PRODUCT,
     "продукт": COL_PRODUCT,
+    "номінація": COL_PRODUCT,
     "кількість": COL_QTY,
+    "кількість учасників (цифрою)": COL_QTY,
     "кількість (число)": COL_QTY,
     "qty": COL_QTY,
 }

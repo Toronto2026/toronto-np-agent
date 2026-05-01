@@ -25,7 +25,14 @@ _HEADER_MAP = {
     "нова пошта - номер відділення (число)": COL_WAREHOUSE,
     "нова пошта - піб отримувача": COL_NAME,
     "товар": COL_PRODUCT,
+    "найменування": COL_PRODUCT,
+    "назва товару": COL_PRODUCT,
+    "послуга": COL_PRODUCT,
+    "товар/послуга": COL_PRODUCT,
+    "продукт": COL_PRODUCT,
     "кількість": COL_QTY,
+    "кількість (число)": COL_QTY,
+    "qty": COL_QTY,
 }
 
 
@@ -58,10 +65,18 @@ def read_bitrix_export(path: str | Path) -> list[dict]:
 
     raw_headers = [str(h) if h is not None else "" for h in rows[0]]
     col_map: dict[int, str] = {}
+    unmapped = []
     for i, rh in enumerate(raw_headers):
         norm = _normalize_header(rh)
         if norm in _HEADER_MAP:
             col_map[i] = _HEADER_MAP[norm]
+        elif norm:
+            unmapped.append(rh)
+    if unmapped:
+        print(f"⚠️  Нерозпізнані колонки Excel: {unmapped}")
+    mapped_fields = list(col_map.values())
+    if COL_PRODUCT not in mapped_fields:
+        print(f"⚠️  Колонка 'Товар' не знайдена! Доступні: {[raw_headers[i] for i in col_map]}")
 
     result = []
     for row in rows[1:]:

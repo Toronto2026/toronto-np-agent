@@ -137,7 +137,7 @@ def process_group(api: NovaPoshtaAPI, cfg: Config, phone: str, group: list[dict]
     full_name = first[COL_NAME]
     ids = ",".join(r[COL_ID] for r in group)
     products = ";".join(
-        f"{r[COL_PRODUCT]} ({r[COL_QTY]})" if r.get(COL_QTY) else r[COL_PRODUCT]
+        f"{r.get(COL_PRODUCT, '')} ({r.get(COL_QTY, '')})" if r.get(COL_QTY) else r.get(COL_PRODUCT, "")
         for r in group
     )
 

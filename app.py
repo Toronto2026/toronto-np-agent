@@ -182,17 +182,17 @@ with tab1:
         console_block(output)
 
         if rc == 0 or "Створено ТТН" in output:
-            c1, c2, c3 = st.columns(3)
-            download_latest("ttn_per_deal_*.xlsx", "ttn_per_deal.xlsx", c1)
-            download_latest("ttn_results_*.xlsx",  "ttn_results.xlsx",  c2)
-            download_latest("missing_*.xlsx",       "missing.xlsx",      c3)
-
-            # Зберігаємо шлях для Кроку 2
             ttn_files = sorted(OUTPUT_DIR.glob("ttn_per_deal_*.xlsx"), reverse=True)
             if ttn_files:
                 st.session_state["ttn_per_deal"] = str(ttn_files[0])
         else:
             st.error("Скрипт завершився з помилкою. Перевірте вивід вище.")
+
+    # Кнопки завантаження — завжди видимі поки файли є в output/
+    c1, c2, c3 = st.columns(3)
+    download_latest("ttn_per_deal_*.xlsx", "ttn_per_deal.xlsx", c1)
+    download_latest("ttn_results_*.xlsx",  "ttn_results.xlsx",  c2)
+    download_latest("missing_*.xlsx",       "missing.xlsx",      c3)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # КРОК 2
@@ -297,12 +297,13 @@ with tab3:
         # Визначаємо джерело файлу — зберігаємо байти в session_state щоб
         # preview і реальний запуск завжди використовували ОДИН і той самий файл
         if uploaded3:
-            # Новий файл завантажено — скидаємо старий preview
+            # Новий файл завантажено — скидаємо старий preview і temp-файл
             new_bytes = uploaded3.getvalue()
             if st.session_state.get("_b3_bytes") != new_bytes:
                 st.session_state["_b3_bytes"] = new_bytes
                 st.session_state["_b3_name"] = uploaded3.name
                 st.session_state.pop("dry_preview_3", None)
+                st.session_state.pop("ttn_results_tmp", None)
         elif result_files and "_b3_bytes" not in st.session_state:
             # Файл з поточної сесії (Крок 1 → Крок 3)
             with open(result_files[0], "rb") as f:
@@ -342,10 +343,12 @@ with tab3:
                 with st.spinner("Оновлення угод..."):
                     output3, rc3 = run_script("3_update_bitrix.py", ["--ttn", ttn_results_path], creds)
                 console_block(output3)
-                if rc3 == 0:
+                if rc3 == 0 and "Немає рядків" not in output3:
                     st.success("✅ Угоди оновлено в Битрікс24!")
                     # Скидаємо кеш для наступного запуску
                     for k in ("dry_preview_3", "ttn_results_tmp", "_b3_bytes", "_b3_name"):
                         st.session_state.pop(k, None)
+                elif "Немає рядків" in output3:
+                    st.warning("⚠️ Файл прочитано, але ТТН не знайдено. Перевірте що завантажили правильний файл.")
         else:
             st.warning("⚠ Завантажте файл ttn_results або спочатку запустіть Крок 1.")

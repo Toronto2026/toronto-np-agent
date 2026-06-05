@@ -55,7 +55,7 @@ def run_script(script: str, args: list[str], creds: dict) -> tuple[str, int]:
         [sys.executable, str(BASE_DIR / script)] + args,
         capture_output=True, text=True,
         encoding="utf-8", errors="replace",
-        cwd=str(BASE_DIR), timeout=300, env=env,
+        cwd=str(BASE_DIR), timeout=900, env=env,
     )
     return (res.stdout or "") + (res.stderr or ""), res.returncode
 

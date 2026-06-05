@@ -87,9 +87,13 @@ def read_bitrix_export(path: str | Path) -> list[dict]:
         rec: dict = {}
         for i, field in col_map.items():
             val = row[i] if i < len(row) else None
-            rec[field] = str(val).strip() if val is not None else ""
-            if rec[field] in ("None", "nan"):
-                rec[field] = ""
+            v = str(val).strip() if val is not None else ""
+            if v in ("None", "nan"):
+                v = ""
+            # Перший непорожній матч для поля перемагає:
+            # "Товар" (col 29) не перезаписується "Номінація" (col 68)
+            if field not in rec or (not rec[field] and v):
+                rec[field] = v
         if rec.get(COL_ID):
             result.append(rec)
 

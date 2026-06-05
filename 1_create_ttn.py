@@ -100,10 +100,16 @@ def is_complete(row: dict) -> bool:
 
 
 def group_by_phone(rows: list[dict]) -> dict[str, list[dict]]:
+    # Групуємо по телефон+нормалізоване_місто+відділення:
+    # різні люди з однаковим телефоном але різними адресами → окремі ТТН
+    # однакова людина з "м.Одеса" і "Одеса" → один ТТН
     groups: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
-        phone = normalize_phone(row[COL_PHONE])
-        groups[phone].append(row)
+        phone     = normalize_phone(row[COL_PHONE])
+        city_norm = normalize_city(row.get(COL_CITY, "")).lower()
+        wh        = str(row.get(COL_WAREHOUSE, "")).strip()
+        key       = f"{phone}|{city_norm}|{wh}"
+        groups[key].append(row)
     return dict(groups)
 
 
@@ -133,10 +139,11 @@ def build_ttn_params(cfg: Config, group: list[dict], city_ref: str, warehouse_re
     }
 
 
-def process_group(api: NovaPoshtaAPI, cfg: Config, phone: str, group: list[dict],
+def process_group(api: NovaPoshtaAPI, cfg: Config, cache_key: str, group: list[dict],
                   dry_run: bool, cache: dict[str, str]) -> dict:
-    """Обробити одну групу телефону. Повертає рядок результату."""
+    """Обробити одну групу (телефон+місто+відділення). Повертає рядок результату."""
     first = group[0]
+    phone = normalize_phone(first[COL_PHONE])
     city_name = first[COL_CITY]
     warehouse_num = first[COL_WAREHOUSE]
     full_name = first[COL_NAME]
@@ -160,9 +167,9 @@ def process_group(api: NovaPoshtaAPI, cfg: Config, phone: str, group: list[dict]
         return {**result_base, "ttn": "DRY-RUN", "status": "dry-run"}
 
     try:
-        # Перевірка дублікатів через локальний кеш (надійніше ніж NP API)
-        if phone in cache:
-            existing = cache[phone]
+        # Перевірка дублікатів: ключ = телефон+місто+відділення
+        if cache_key in cache:
+            existing = cache[cache_key]
             print(f"  ⏭️  Вже існує ТТН {existing} | {full_name} | {city_name} | {ids}")
             return {**result_base, "ttn": existing, "status": "OK"}
 
@@ -172,7 +179,7 @@ def process_group(api: NovaPoshtaAPI, cfg: Config, phone: str, group: list[dict]
         recipient = api.create_counterparty(first_name, last, middle, normalize_phone(phone))
         params = build_ttn_params(cfg, group, city_ref, warehouse_ref, recipient)
         ttn = api.create_ttn(params)
-        cache[phone] = ttn          # зберігаємо в кеш одразу
+        cache[cache_key] = ttn      # ключ = phone|city|warehouse
         save_cache(cache)
         print(f"  ✅ ТТН {ttn} | {full_name} | {city_name} | {ids}")
         return {**result_base, "ttn": ttn, "status": "OK"}
@@ -230,14 +237,14 @@ def main():
         print(f"⏭️  Пропущено (немає даних НП): {len(missing)} → {missing_path.name}")
 
     groups = group_by_phone(complete)
-    print(f"\n🔄 Груп за телефоном: {len(groups)}")
+    print(f"\n🔄 Груп (унікальних телефон+місто+відділення): {len(groups)}")
     if args.dry_run:
         print("   (режим dry-run — API не викликається)\n")
 
     results = []
     errors = 0
-    for phone, group in groups.items():
-        row = process_group(api, cfg, phone, group, dry_run=args.dry_run, cache=cache)
+    for cache_key, group in groups.items():
+        row = process_group(api, cfg, cache_key, group, dry_run=args.dry_run, cache=cache)
         results.append(row)
         if row["status"] not in ("OK", "dry-run"):
             errors += 1

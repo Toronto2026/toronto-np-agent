@@ -42,6 +42,9 @@ def normalize_phone(phone: str) -> str:
     # 9 цифр без коду країни (напр. 671234567)
     if len(digits) == 9:
         return "380" + digits
+    # 8 цифр — Excel знятий провідний 0: "67955755" → "067955755" → "380067955755"
+    if len(digits) == 8:
+        return "380" + "0" + digits
     return digits
 
 

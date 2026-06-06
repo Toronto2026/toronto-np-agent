@@ -82,12 +82,40 @@ def normalize_city(city: str) -> str:
     return city.strip()
 
 
+_OBLAST_HINTS = [
+    "вінниц", "харків", "сумськ", "київськ", "дніпропетр", "одеськ",
+    "львів", "запорізьк", "черкаськ", "волинськ", "рівненськ",
+    "чернігів", "чернівецьк", "полтавськ", "тернопільськ",
+    "хмельницьк", "миколаїв", "херсонськ", "закарпатськ",
+    "луганськ", "донецьк",
+]
+
+def extract_oblast_hint(city_raw: str) -> str:
+    """Вилучити підрядок назви області для фільтрації однойменних міст."""
+    import re as _re
+    low = city_raw.lower()
+    for hint in _OBLAST_HINTS:
+        if hint in low:
+            return hint
+    return ""
+
+
+def sanitize_name_part(s: str) -> str:
+    """Замінити спецсимволи в іменах що NP API не приймає."""
+    import re as _re
+    # Нормалізуємо різні варіанти апострофа
+    s = s.replace("ʼ", "'").replace("’", "'").replace("‘", "'").replace("`", "'")
+    # Видаляємо символи що не є кирилицею/латиницею/цифрами/пробілом/апострофом/дефісом
+    s = _re.sub(r"[^\w\s'\-]", "", s, flags=_re.UNICODE)
+    return s.strip()
+
+
 def split_name(full_name: str) -> tuple[str, str, str]:
     """Розбити ПІБ на (прізвище, ім'я, по-батькові)."""
     parts = full_name.strip().split()
-    last = parts[0] if len(parts) > 0 else ""
-    first = parts[1] if len(parts) > 1 else ""
-    middle = parts[2] if len(parts) > 2 else ""
+    last   = sanitize_name_part(parts[0]) if len(parts) > 0 else ""
+    first  = sanitize_name_part(parts[1]) if len(parts) > 1 else ""
+    middle = sanitize_name_part(parts[2]) if len(parts) > 2 else ""
     return last, first, middle
 
 
@@ -198,7 +226,7 @@ def process_group(api: NovaPoshtaAPI, cfg: Config, cache_key: str, group: list[d
             print(f"  ⏭️  Вже існує ТТН {existing} | {full_name} | {city_name} | {ids}")
             return {**result_base, "ttn": existing, "status": "OK"}
 
-        city_ref = api.get_city_ref(normalize_city(city_name))
+        city_ref = api.get_city_ref(normalize_city(city_name), area_hint=extract_oblast_hint(city_name))
         warehouse_ref = api.get_warehouse_ref(city_ref, warehouse_num)
         last, first_name, middle = split_name(full_name)
         recipient = api.create_counterparty(first_name, last, middle, normalize_phone(phone))

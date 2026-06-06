@@ -42,18 +42,32 @@ class NovaPoshtaAPI:
                     time.sleep(2 ** attempt)
         raise NovaPoshtaError(f"Мережева помилка (3 спроби): {last_exc}")
 
-    def get_city_ref(self, city_name: str) -> str:
-        """Отримати Ref міста за назвою (з кешем)."""
-        key = city_name.strip().lower()
-        if key in self._city_cache:
-            return self._city_cache[key]
+    def get_city_ref(self, city_name: str, area_hint: str = "") -> str:
+        """Отримати Ref міста за назвою (з кешем).
+        area_hint — підрядок назви області (напр. 'вінниц') для вибору
+        правильного міста серед однойменних (є 22 Калинівки в Україні).
+        """
+        cache_key = f"{city_name.strip().lower()}|{area_hint.lower()}"
+        if cache_key in self._city_cache:
+            return self._city_cache[cache_key]
 
         data = self._call("Address", "getCities", {"FindByString": city_name})
         items = data.get("data", [])
         if not items:
             raise NovaPoshtaError(f"Місто не знайдено: {city_name!r}")
+
+        # Якщо є кілька міст і підказка про область — обираємо правильне
+        if area_hint and len(items) > 1:
+            hint = area_hint.lower()
+            for item in items:
+                area = item.get("AreaDescription", "").lower()
+                if hint in area:
+                    ref = item["Ref"]
+                    self._city_cache[cache_key] = ref
+                    return ref
+
         ref = items[0]["Ref"]
-        self._city_cache[key] = ref
+        self._city_cache[cache_key] = ref
         return ref
 
     def get_warehouse_ref(self, city_ref: str, warehouse_number: str) -> str:

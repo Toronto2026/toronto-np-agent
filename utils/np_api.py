@@ -58,14 +58,20 @@ class NovaPoshtaAPI:
 
     def get_warehouse_ref(self, city_ref: str, warehouse_number: str) -> str:
         """Отримати Ref відділення за номером у місті (з кешем)."""
-        cache_key = (city_ref, str(warehouse_number))
+        # NP API вимагає WarehouseId як JSON integer, не рядок
+        try:
+            wh_int = int(float(str(warehouse_number).strip()))
+        except (ValueError, TypeError):
+            raise NovaPoshtaError(f"Некоректний номер відділення: {warehouse_number!r}")
+
+        cache_key = (city_ref, str(wh_int))
         if cache_key in self._warehouse_cache:
             return self._warehouse_cache[cache_key]
 
         data = self._call(
             "Address",
             "getWarehouses",
-            {"CityRef": city_ref, "WarehouseId": str(warehouse_number)},
+            {"CityRef": city_ref, "WarehouseId": wh_int},
         )
         items = data.get("data", [])
         if not items:
@@ -73,7 +79,7 @@ class NovaPoshtaAPI:
                 f"Відділення #{warehouse_number} не знайдено у місті {city_ref}"
             )
         ref = items[0]["Ref"]
-        self._warehouse_cache[cache_key] = ref
+        self._warehouse_cache[(city_ref, str(wh_int))] = ref
         return ref
 
     def create_counterparty(self, first_name: str, last_name: str, middle_name: str, phone: str) -> dict:

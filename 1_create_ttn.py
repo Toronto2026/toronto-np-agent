@@ -26,6 +26,10 @@ OUTPUT_DIR = Path(__file__).parent / "output"
 
 def normalize_phone(phone: str) -> str:
     """Нормалізувати номер до формату 380XXXXXXXXX (12 цифр)."""
+    import re as _re
+    phone = phone.strip()
+    # Excel зберігає числа як float: "975942343.0" → обрізаємо десяткову частину
+    phone = _re.sub(r'\.\d+$', '', phone)
     digits = "".join(c for c in phone if c.isdigit())
     if digits.startswith("380") and len(digits) == 12:
         return digits

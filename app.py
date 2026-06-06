@@ -147,17 +147,31 @@ with tab1:
         key="bitrix_file",
     )
 
-    col_dry, col_btn = st.columns([3, 1])
+    CACHE_FILE = OUTPUT_DIR / "ttn_cache.json"
+
+    col_dry, col_cache, col_btn = st.columns([2, 2, 1])
     dry_run = col_dry.checkbox(
         "Тестовий режим (dry-run) — не створювати реальні ТТН",
         value=True,
     )
+    clear_cache = col_cache.checkbox(
+        "🗑 Очистити кеш ТТН (перестворити всі накладні)",
+        value=False,
+        help="Використовуйте якщо ТТН зникли з кабінету НП або кеш застарів",
+    )
+    cache_info = f"Кеш: {len(__import__('json').loads(CACHE_FILE.read_text('utf-8'))) if CACHE_FILE.exists() else 0} записів"
+    col_cache.caption(cache_info)
+
     run1 = col_btn.button(
         "▶ Запустити",
         type="primary",
         disabled=not (uploaded and all_ok),
         use_container_width=True,
     )
+
+    if run1 and uploaded and clear_cache and CACHE_FILE.exists():
+        CACHE_FILE.unlink()
+        st.info("🗑 Кеш очищено — всі ТТН будуть перестворені")
 
     if run1 and uploaded:
         suffix = Path(uploaded.name).suffix or ".xlsx"

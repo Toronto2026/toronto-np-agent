@@ -118,6 +118,52 @@ def write_missing(rows: list[dict], output_dir: Path) -> Path:
     return path
 
 
+def write_reconcile_missing(rows: list[dict], field_map: dict[str, str], output_dir: Path) -> Path:
+    """Записує угоди без ТТН, знайдені напряму в Бітрікс24 (Крок 4 — звірка),
+    у reconcile_YYYYMMDD.xlsx. Заголовки сумісні з read_bitrix_export() —
+    файл можна одразу завантажити у Крок 1 без нового експорту з Бітрікс.
+    """
+    today = date.today().strftime("%Y%m%d")
+    path = output_dir / f"reconcile_{today}.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Без ТТН (звірка Bitrix)"
+
+    headers = [
+        "ID",
+        "Нова Пошта - ПІБ Отримувача",
+        "Товар",
+        "Кількість учасників (цифрою)",
+        "Нова Пошта - номер телефону отримувача",
+        "Нова Пошта - місто Отримувача",
+        "Нова Пошта - Номер Відділення (число)",
+        "Стадія",
+        "Дата завершення",
+    ]
+    _write_header_row(ws, 1, headers)
+    for r, d in enumerate(rows, start=2):
+        values = [
+            d.get("ID", ""),
+            d.get(field_map["name"], "") or "",
+            "Нагороди фестивалю Торонто",
+            "1",
+            d.get(field_map["phone"], "") or "",
+            d.get(field_map["city"], "") or "",
+            d.get(field_map["warehouse"], "") or "",
+            d.get("STAGE_ID", ""),
+            (d.get("CLOSEDATE") or "")[:10],
+        ]
+        for c, v in enumerate(values, start=1):
+            ws.cell(r, c, v)
+
+    for col in ws.columns:
+        max_len = max((len(str(cell.value or "")) for cell in col), default=0)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 50)
+
+    wb.save(path)
+    return path
+
+
 def write_ttn_results(rows: list[dict], output_dir: Path) -> Path:
     """Записує ttn_results_YYYYMMDD.xlsx."""
     today = date.today().strftime("%Y%m%d")

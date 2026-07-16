@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 
 import streamlit as st
@@ -35,6 +36,8 @@ def load_credentials() -> dict[str, str]:
         "DESCRIPTION", "DECLARED_VALUE",
         "WEIGHT", "LENGTH", "WIDTH", "HEIGHT",
         "BITRIX_WEBHOOK", "BITRIX_TTN_FIELD",
+        "NP_FIELD_PHONE", "NP_FIELD_CITY", "NP_FIELD_WAREHOUSE", "NP_FIELD_NAME",
+        "NP_CATEGORY_ID",
     ]
     creds: dict[str, str] = {}
     for k in keys:
@@ -133,7 +136,10 @@ else:
 st.divider()
 
 # ─── Вкладки ──────────────────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📦  Крок 1 — Створення ТТН", "🏭  Крок 2 — Фулфілмент", "🔄  Крок 3 — Оновити Битрікс24"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📦  Крок 1 — Створення ТТН", "🏭  Крок 2 — Фулфілмент",
+    "🔄  Крок 3 — Оновити Битрікс24", "🔍  Крок 4 — Звірка",
+])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # КРОК 1
@@ -366,3 +372,47 @@ with tab3:
                     st.warning("⚠️ Файл прочитано, але ТТН не знайдено. Перевірте що завантажили правильний файл.")
         else:
             st.warning("⚠ Завантажте файл ttn_results або спочатку запустіть Крок 1.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# КРОК 4
+# ══════════════════════════════════════════════════════════════════════════════
+with tab4:
+    st.subheader("Звірка Бітрікс24 ↔ ТТН — напряму через API")
+    st.caption(
+        "Не залежить від Excel-експорту: знаходить угоди, де НП-дані отримувача вже заповнені, "
+        "а ТТН — ще немає. Ловить саме ті угоди, що дозріли ПІСЛЯ того, як експорт для Кроку 1 вже зняли."
+    )
+
+    closedate_from = st.date_input(
+        "Врахувати угоди з датою завершення (CLOSEDATE) від:",
+        value=date(2026, 1, 1),
+        help="Відсікає старі хвилі фестивалю (2024–2025), щоб не засмічувати список неактуальними угодами.",
+    )
+
+    run4 = st.button("🔍 Перевірити відповідність", type="primary", disabled=not all_ok)
+
+    if run4:
+        with st.spinner("Опитую Бітрікс24…"):
+            output4, rc4 = run_script(
+                "4_reconcile.py",
+                ["--closedate-from", closedate_from.strftime("%Y-%m-%d")],
+                creds,
+            )
+        console_block(output4)
+        st.session_state["_reconcile_ran"] = True
+        st.session_state["_reconcile_ok"] = (rc4 == 0)
+
+    if st.session_state.get("_reconcile_ran"):
+        rec_files = sorted(OUTPUT_DIR.glob("reconcile_*.xlsx"), reverse=True)
+        if rec_files and st.session_state.get("_reconcile_ok"):
+            st.warning("⚠ Знайдено угоди з НП-даними без ТТН — див. таблицю нижче")
+            try:
+                import pandas as pd
+                df_rec = pd.read_excel(rec_files[0])
+                st.dataframe(df_rec, use_container_width=True, height=400)
+            except Exception:
+                pass
+            download_latest("reconcile_*.xlsx", "reconcile.xlsx")
+            st.info("📌 Цей файл можна одразу завантажити у Крок 1 — заголовки сумісні, новий експорт з Бітрікс не потрібен.")
+        elif st.session_state.get("_reconcile_ok"):
+            st.success("✅ Розбіжностей не знайдено — всі угоди з НП-даними мають ТТН.")

@@ -9,7 +9,6 @@ import argparse
 import json
 import sys
 from collections import defaultdict
-from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -17,9 +16,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import Config
 from utils.np_api import NovaPoshtaAPI, NovaPoshtaError
 from utils.excel import (
-    read_bitrix_export, write_missing, write_ttn_results, write_ttn_per_deal,
+    read_bitrix_export, write_missing, write_foreign, write_ttn_results, write_ttn_per_deal,
     COL_ID, COL_PHONE, COL_CITY, COL_WAREHOUSE, COL_NAME, COL_PRODUCT, COL_QTY,
 )
+from utils.notify import notify_telegram
 
 OUTPUT_DIR = Path(__file__).parent / "output"
 
@@ -122,12 +122,24 @@ def split_name(full_name: str) -> tuple[str, str, str]:
     return last, first, middle
 
 
-_SKIP_KEYWORDS = ["тільки електронні", "только электронн", "електронна версія", "electronic only"]
+_SKIP_KEYWORDS = [
+    "тільки електронні", "только электронн", "електронна версія", "electronic only",
+    "експрес диплом", "експертний коментар",
+]
 
 def is_electronic_only(row: dict) -> bool:
     """Повертає True якщо замовлено тільки електронні версії — ТТН не потрібен."""
     product = row.get(COL_PRODUCT, "").lower()
     return any(kw in product for kw in _SKIP_KEYWORDS)
+
+
+def is_foreign_phone(row: dict) -> bool:
+    """Телефон заповнений, але після нормалізації не починається з 380 —
+    Нова Пошта не доставляє за кордон, потребує ручної перевірки (не автозаповнення)."""
+    phone = row.get(COL_PHONE, "").strip()
+    if not phone:
+        return False
+    return not normalize_phone(phone).startswith("380")
 
 
 CACHE_FILE = OUTPUT_DIR / "ttn_cache.json"
@@ -285,12 +297,23 @@ def main():
     all_rows = read_bitrix_export(excel_path)
     print(f"   Всього рядків: {len(all_rows)}")
 
-    complete = [r for r in all_rows if is_complete(r)]
-    missing = [r for r in all_rows if not is_complete(r)]
+    electronic_only = [r for r in all_rows if is_electronic_only(r)]
+    foreign = [r for r in all_rows if is_foreign_phone(r) and not is_electronic_only(r)]
+    complete = [r for r in all_rows if is_complete(r) and r not in foreign]
+    missing = [r for r in all_rows if not is_complete(r) and not is_electronic_only(r) and r not in foreign]
 
+    if electronic_only:
+        print(f"📧 Тільки електронні версії (доставка не потрібна): {len(electronic_only)}")
+
+    foreign_path = None
+    if foreign:
+        foreign_path = write_foreign(foreign, OUTPUT_DIR)
+        print(f"🌍 Іноземний номер (НП не доставляє за кордон, на ручну перевірку): {len(foreign)} → {foreign_path.name}")
+
+    missing_path = None
     if missing:
         missing_path = write_missing(missing, OUTPUT_DIR)
-        print(f"⏭️  Пропущено (немає даних НП): {len(missing)} → {missing_path.name}")
+        print(f"⏭️  Пропущено (потрібна фізична доставка, але немає даних НП): {len(missing)} → {missing_path.name}")
 
     groups = group_by_phone(complete)
     print(f"\n🔄 Груп (унікальних телефон+місто+відділення): {len(groups)}")
@@ -314,17 +337,24 @@ def main():
 
     result_path = write_ttn_results(results, OUTPUT_DIR)
     per_deal_path = write_ttn_per_deal(all_rows, id_to_ttn, OUTPUT_DIR)
-    today = date.today().strftime("%Y%m%d")
 
     print()
     ok_count = sum(1 for r in results if r["status"] == "OK")
     print(f"✅ Створено ТТН: {ok_count}")
-    if missing:
-        print(f"⏭️  Пропущено (немає даних НП): {len(missing)} → missing_{today}.xlsx")
     if errors:
         print(f"❌ Помилок API: {errors}")
     print(f"📁 Результат: {result_path.name}")
     print(f"📋 ТТН по угодах: {per_deal_path.name}")
+
+    if not args.dry_run and (missing or foreign or errors):
+        lines = [f"📦 Агент ТТН: створено {ok_count}"]
+        if missing:
+            lines.append(f"⏭️ Потрібна фізична доставка, але немає даних НП: {len(missing)} → {missing_path.name}")
+        if foreign:
+            lines.append(f"🌍 Іноземний номер, на ручну перевірку: {len(foreign)} → {foreign_path.name}")
+        if errors:
+            lines.append(f"❌ Помилок API: {errors} → {result_path.name}")
+        notify_telegram("\n".join(lines), cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_ID)
 
 
 if __name__ == "__main__":

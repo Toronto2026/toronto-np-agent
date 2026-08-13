@@ -100,13 +100,12 @@ def read_bitrix_export(path: str | Path) -> list[dict]:
     return result
 
 
-def write_missing(rows: list[dict], output_dir: Path) -> Path:
-    """Записує рядки без НП-даних у missing_YYYYMMDD.xlsx."""
+def _write_rows_xlsx(rows: list[dict], output_dir: Path, filename_prefix: str, sheet_title: str) -> Path:
     today = date.today().strftime("%Y%m%d")
-    path = output_dir / f"missing_{today}.xlsx"
+    path = output_dir / f"{filename_prefix}_{today}.xlsx"
     wb = Workbook()
     ws = wb.active
-    ws.title = "Без НП-даних"
+    ws.title = sheet_title
 
     headers = [COL_ID, COL_NAME, COL_PRODUCT, COL_QTY, COL_PHONE, COL_CITY, COL_WAREHOUSE]
     _write_header_row(ws, 1, headers)
@@ -116,6 +115,17 @@ def write_missing(rows: list[dict], output_dir: Path) -> Path:
 
     wb.save(path)
     return path
+
+
+def write_missing(rows: list[dict], output_dir: Path) -> Path:
+    """Записує рядки без НП-даних у missing_YYYYMMDD.xlsx."""
+    return _write_rows_xlsx(rows, output_dir, "missing", "Без НП-даних")
+
+
+def write_foreign(rows: list[dict], output_dir: Path) -> Path:
+    """Записує рядки з нероздатковим (не 380) телефоном у foreign_YYYYMMDD.xlsx —
+    потребують ручної перевірки, а не автозаповнення поля."""
+    return _write_rows_xlsx(rows, output_dir, "foreign", "Іноземні — на перевірку")
 
 
 def write_reconcile_missing(rows: list[dict], field_map: dict[str, str], output_dir: Path) -> Path:

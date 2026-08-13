@@ -38,6 +38,7 @@ def load_credentials() -> dict[str, str]:
         "BITRIX_WEBHOOK", "BITRIX_TTN_FIELD",
         "NP_FIELD_PHONE", "NP_FIELD_CITY", "NP_FIELD_WAREHOUSE", "NP_FIELD_NAME",
         "NP_CATEGORY_ID",
+        "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
     ]
     creds: dict[str, str] = {}
     for k in keys:

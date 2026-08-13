@@ -39,6 +39,10 @@ class Config:
     BITRIX_WEBHOOK: str = os.getenv("BITRIX_WEBHOOK", "")
     BITRIX_TTN_FIELD: str = os.getenv("BITRIX_TTN_FIELD", "UF_CRM_1704712295456")
 
+    # Telegram-сповіщення про пропущені/помилкові ТТН (опційно)
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+
     # Битрікс24 — поля НП-даних отримувача та воронка (для Кроку 4 — звірка напряму через API)
     NP_FIELD_PHONE: str = os.getenv("NP_FIELD_PHONE", "UF_CRM_1688394751198")
     NP_FIELD_CITY: str = os.getenv("NP_FIELD_CITY", "UF_CRM_1688394797326")
